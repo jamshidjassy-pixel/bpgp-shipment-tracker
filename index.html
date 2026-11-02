@@ -1,19 +1,41 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#102b50">
-  <title>BPGP Purchase Order & Shipment Tracker</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102b50"><title>BPGP Purchase Order & Shipment Tracker</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header><div class="brand">BPGP <span>Purchase Order & Shipment Tracker</span></div><div class="header-right"><span id="userEmail"></span><button id="signOut" class="secondary hidden">Sign out</button></div></header>
+<header>
+  <div class="brand">▱ BPGP <span>Purchase Order & Shipment Tracker</span></div>
+  <div class="header-right"><span id="userEmail"></span><button id="signOut" class="secondary hidden">Sign out</button></div>
+</header>
 <section id="loginView" class="login-wrap hidden"><div class="login-card"><div class="login-mark">BPGP</div><h1>Sign in to your tracker</h1><p>Use the email and password created in Supabase Authentication.</p><form id="loginForm"><label>Email address<input id="loginEmail" type="email" autocomplete="username" required placeholder="you@company.com"></label><label>Password<input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Your password"></label><button type="submit" id="loginButton">Sign in</button><div id="loginMessage" class="message" role="status"></div></form></div></section>
-<main id="appView" class="hidden">
-  <section class="toolbar"><div><h1>Purchase Orders</h1><p>Track production, container booking and delivery in one place.</p></div><button id="newBtn">＋ New Purchase Order</button></section>
-  <section class="stats"><article><small>Total POs</small><strong id="total">0</strong></article><article><small>Under Production</small><strong id="production">0</strong></article><article><small>In Transit</small><strong id="transit">0</strong></article><article><small>Closed</small><strong id="closed">0</strong></article></section>
-  <section class="panel"><div class="table-top"><h2>Purchase order register</h2><div class="table-tools"><input id="search" placeholder="Search PO / container / model…"><button id="refreshBtn" class="secondary">↻ Refresh</button><button id="exportBtn" class="secondary">Export CSV</button></div></div><div id="appMessage" class="message" role="status"></div><div class="table-wrap"><table><thead><tr><th>PO No.</th><th>Supplier</th><th>Product models / Qty</th><th>Advance</th><th>Advance date</th><th>Target completion</th><th>Actual completion</th><th>Invoice (USD)</th><th>DDP (USD)</th><th>Landing cost (USD)</th><th>Container</th><th>Booking</th><th>Sailing</th><th>ETA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table></div><p class="hint">Landing cost = original invoice value + DDP value. PO sequence begins at 21 and continues across months.</p></section>
-</main>
+<div id="appView" class="app-shell hidden">
+<aside class="sidebar">
+  <div class="side-item active">▣ <span>Dashboard</span></div>
+  <div class="side-item">▤ <span>Purchase Orders</span></div>
+  <div class="side-item">♧ <span>Shipments</span></div>
+  <div class="side-item">♙ <span>Suppliers</span></div>
+  <div class="side-item">▥ <span>Reports</span></div>
+  <div class="side-item">⚙ <span>Settings</span></div>
+</aside>
+<main>
+  <section class="toolbar"><div><h1>Purchase Orders</h1><p>Monitor purchase orders, production and shipment milestones.</p></div><div class="toolbar-actions"><button id="newBtn">＋ New Purchase Order</button><button id="exportBtn" class="secondary">▣ Export (Excel)</button><button class="secondary" id="refreshBtn">↻ Refresh</button></div></section>
+  <section class="stats">
+    <article><div class="stat-icon blue">▤</div><div><small>Total POs</small><strong id="total">0</strong></div></article>
+    <article><div class="stat-icon green">▥</div><div><small>Under Production</small><strong id="production">0</strong></div></article>
+    <article><div class="stat-icon orange">♧</div><div><small>In Transit</small><strong id="transit">0</strong></div></article>
+    <article><div class="stat-icon cyan">□</div><div><small>At POD / Delivery</small><strong id="atPod">0</strong></div></article>
+    <article><div class="stat-icon purple">✓</div><div><small>Closed</small><strong id="closed">0</strong></div></article>
+  </section>
+  <section class="panel"><div class="table-top"><h2>Purchase Order Register</h2><div class="table-tools"><input id="search" placeholder="Search PO / container / model…"><button id="refreshBtn2" class="secondary" type="button">↻ Refresh</button></div></div><div id="appMessage" class="message" role="status"></div><div class="table-wrap"><table><thead><tr><th>PO No.</th><th>Supplier / Factory</th><th>Product Models</th><th>Advance Amount</th><th>Advance Date</th><th>Target Completion (35 Days)</th><th>Actual Completion</th><th>Invoice Value (USD)</th><th>DDP Value (USD)</th><th>Total Landing Cost (USD)</th><th>Container No.</th><th>Booking Date</th><th>Sailing Date</th><th>ETA</th><th>Status</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table></div><p class="hint">Landing cost is automatically calculated as original invoice value + DDP value. PO sequence begins at 21 and continues across months.</p></section>
+  <section class="detail-panel">
+    <div class="detail-summary" id="detailSummary"></div>
+    <div class="timeline-area"><h2>Process / Shipment Timeline</h2><div class="timeline" id="timeline"></div><div class="current-status" id="currentStatus">Select a purchase order to view progress.</div></div>
+    <div class="detail-right"><div class="detail-actions"><button id="editSelected" class="secondary">✎ Edit PO</button><button id="addUpdate" class="secondary">＋ Add Update</button></div><h3>Key Dates</h3><div id="keyDates"></div></div>
+  </section>
+</main></div>
 <dialog id="editor"><form id="poForm"><div class="modal-head"><div><h2 id="formTitle">New purchase order</h2><p>New PO number is assigned by the database when saved.</p></div><button type="button" class="x" id="close">×</button></div>
 <div class="form-grid"><label>PO number<input id="poNo" readonly value="Assigned on save"></label><label>Supplier<input id="supplier" placeholder="Factory / supplier"></label>
 <label>Advance payment amount (USD)<input id="advance" type="number" min="0" step="0.01"></label><label>Advance payment date<input id="advanceDate" type="date"></label>

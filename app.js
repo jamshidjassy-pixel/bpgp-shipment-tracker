@@ -8,7 +8,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const MODELS = ['Retreat = CP320D','Cove = CP430','Lagoon = CP540','Horizon = CP800','Oasis = Oasis'];
 const STATUSES = ['Advance Paid – Under Production','Production Completed – Waiting for Booking','Booked – Waiting to Pick Up','Loaded and Sent to Port','Sailed from POL – In Transit','Landed at POD','Delivered at Showroom – Closed'];
 const $ = id => document.getElementById(id);
-let orders = [], editingId = null, session = null;
+let orders = [], editingId = null, session = null, selectedId = null;
 $('status').innerHTML = STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
 
 function escapeHtml(value='') { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -25,16 +25,44 @@ async function loadOrders() {
   const ids=(poData||[]).map(p=>p.id); let productData=[];
   if(ids.length){const {data,error}=await supabase.from('purchase_order_products').select('*').in('purchase_order_id',ids);if(error){showMessage(error.message,true);return;}productData=data||[];}
   orders=(poData||[]).map(p=>normalize(p,productData.filter(x=>x.purchase_order_id===p.id)));
+  if(!orders.some(o=>o.id===selectedId)) selectedId=orders[0]?.id||null;
   showMessage(''); render();
 }
 function render() {
   const q=$('search').value.trim().toLowerCase();
   const filtered=orders.filter(o=>JSON.stringify(o).toLowerCase().includes(q));
-  $('rows').innerHTML=filtered.map(o=>`<tr><td class="po">${escapeHtml(o.poNo)}</td><td>${escapeHtml(o.supplier||'—')}</td><td>${o.models.map(m=>`${escapeHtml(m.model)} × ${m.qty}`).join('<br>')||'—'}</td><td>${money(o.advance)}</td><td>${escapeHtml(o.advanceDate||'—')}</td><td>${escapeHtml(o.targetDate||'—')}</td><td>${escapeHtml(o.actualDate||'—')}</td><td>${money(o.invoice)}</td><td>${money(o.ddp)}</td><td><b>${money(Number(o.invoice||0)+Number(o.ddp||0))}</b></td><td>${escapeHtml(o.container||'—')}</td><td>${escapeHtml(o.booking||'—')}</td><td>${escapeHtml(o.sailing||'—')}</td><td>${escapeHtml(o.eta||'—')}</td><td><span class="${statusClass(o.status)}">${escapeHtml(o.status)}</span></td><td><div class="row-actions"><button class="tiny secondary" data-edit="${o.id}">Edit</button><button class="tiny danger" data-delete="${o.id}">Delete</button></div></td></tr>`).join('');
-  $('total').textContent=orders.length; $('production').textContent=orders.filter(o=>o.status===STATUSES[0]||o.status===STATUSES[1]).length; $('transit').textContent=orders.filter(o=>o.status===STATUSES[4]||o.status===STATUSES[5]).length; $('closed').textContent=orders.filter(o=>o.status===STATUSES[6]).length;
-  $('rows').querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>editOrder(b.dataset.edit)));
-  $('rows').querySelectorAll('[data-delete]').forEach(b=>b.addEventListener('click',()=>deleteOrder(b.dataset.delete)));
+  $('rows').innerHTML=filtered.map(o=>`<tr class="${selectedId===o.id?'selected-row':''}" data-select="${o.id}"><td class="po">${escapeHtml(o.poNo)}</td><td>${escapeHtml(o.supplier||'—')}</td><td>${o.models.map(m=>`${escapeHtml(m.model)} × ${m.qty}`).join('<br>')||'—'}</td><td>${money(o.advance)}</td><td>${escapeHtml(o.advanceDate||'—')}</td><td>${escapeHtml(o.targetDate||'—')}</td><td>${escapeHtml(o.actualDate||'—')}</td><td>${money(o.invoice)}</td><td>${money(o.ddp)}</td><td><b>${money(Number(o.invoice||0)+Number(o.ddp||0))}</b></td><td>${escapeHtml(o.container||'—')}</td><td>${escapeHtml(o.booking||'—')}</td><td>${escapeHtml(o.sailing||'—')}</td><td>${escapeHtml(o.eta||'—')}</td><td><span class="${statusClass(o.status)}">${escapeHtml(o.status)}</span></td><td><div class="row-actions"><button class="tiny secondary" data-edit="${o.id}">Edit</button><button class="tiny danger" data-delete="${o.id}">Delete</button></div></td></tr>`).join('');
+  $('total').textContent=orders.length;
+  $('production').textContent=orders.filter(o=>o.status===STATUSES[0]||o.status===STATUSES[1]).length;
+  $('transit').textContent=orders.filter(o=>o.status===STATUSES[4]||o.status===STATUSES[5]).length;
+  $('closed').textContent=orders.filter(o=>o.status===STATUSES[6]).length;
+  const pod=$('atPod'); if(pod) pod.textContent=orders.filter(o=>o.status===STATUSES[5]).length;
+  $('rows').querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();editOrder(b.dataset.edit);}));
+  $('rows').querySelectorAll('[data-delete]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();deleteOrder(b.dataset.delete);}));
+  $('rows').querySelectorAll('[data-select]').forEach(r=>r.addEventListener('click',()=>{selectedId=r.dataset.select;render();renderDetail();}));
+  if(!selectedId && orders.length) selectedId=orders[0].id;
+  renderDetail();
 }
+function renderDetail(){
+  const o=orders.find(x=>x.id===selectedId);
+  const left=$('detailSummary'), timeline=$('timeline'), current=$('currentStatus'), dates=$('keyDates');
+  if(!left||!timeline||!current||!dates)return;
+  if(!o){left.innerHTML='<h2>Select a purchase order</h2><p>No selection</p><p>Choose a row above to see the shipment timeline and key dates.</p>';timeline.innerHTML='<p>Select a purchase order to view progress.</p>';current.textContent='Select a purchase order to view progress.';dates.innerHTML='<p>No purchase order selected.</p>';return;}
+  left.innerHTML=`<h2>${escapeHtml(o.poNo)} <span class="${statusClass(o.status)}">${escapeHtml(o.status)}</span></h2>
+    <p>♙ <b>Supplier:</b> ${escapeHtml(o.supplier||'—')}</p>
+    <p>▣ <b>Product:</b> ${o.models.map(m=>`${escapeHtml(m.model)} × ${m.qty}`).join(', ')||'—'}</p>
+    <p>◷ <b>Advance:</b> USD ${money(o.advance)} (${escapeHtml(o.advanceDate||'—')})</p>
+    <p>◉ <b>Target Completion:</b> ${escapeHtml(o.targetDate||'—')}</p>
+    <p>✓ <b>Actual Completion:</b> ${escapeHtml(o.actualDate||'—')}</p>
+    <p>$ <b>Invoice Value:</b> USD ${money(o.invoice)}</p>
+    <p>$ <b>DDP Value:</b> USD ${money(o.ddp)}</p>
+    <p>▤ <b>Container No.:</b> ${escapeHtml(o.container||'—')}</p>`;
+  const currentIndex=Math.max(0,STATUSES.indexOf(o.status));
+  timeline.innerHTML=STATUSES.map((s,i)=>`<div class="milestone ${i<currentIndex?'done':i===currentIndex?'active':''}"><span class="milestone-dot">${i<currentIndex?'✓':i===currentIndex?'●':'○'}</span><b>${escapeHtml(s)}</b><small>${escapeHtml([o.advanceDate,'',o.actualDate,o.booking,o.booking,o.sailing,o.eta][i]||'')}</small></div>`).join('');
+  current.textContent=`Current Status: ${o.status}. ${o.sailing?'Sailed from POL on '+o.sailing+'. ':''}${o.eta?'ETA at POD: '+o.eta+'.':''}`;
+  dates.innerHTML=`<div><span>Booking Date</span><b>${escapeHtml(o.booking||'—')}</b></div><div><span>Sailing Date</span><b>${escapeHtml(o.sailing||'—')}</b></div><div><span>ETA (POD)</span><b>${escapeHtml(o.eta||'—')}</b></div>`;
+}
+
 function addModel(model='',qty=1) { const div=document.createElement('div');div.className='model-row';div.innerHTML=`<select aria-label="Pool model">${MODELS.map(m=>`<option value="${escapeHtml(m)}" ${m===model?'selected':''}>${escapeHtml(m)}</option>`).join('')}</select><input type="number" min="1" step="1" value="${Math.max(1,Number(qty)||1)}" aria-label="Quantity"><button type="button" class="remove" aria-label="Remove model">×</button>`;div.querySelector('.remove').onclick=()=>div.remove();$('models').append(div); }
 function calc(){ $('targetDate').value=dateAdd($('advanceDate').value,35);$('landing').value=money(Number($('invoice').value||0)+Number($('ddp').value||0)); }
 function clearForm(){ $('poForm').reset();$('models').innerHTML='';addModel();$('status').value=STATUSES[0];$('poNo').value='Assigned on save';calc(); }
@@ -49,6 +77,6 @@ function exportCsv(){const headers=['PO Number','Supplier','Models','Advance Amo
 async function showApp(currentSession){session=currentSession;$('loginView').classList.toggle('hidden',!!session);$('appView').classList.toggle('hidden',!session);$('signOut').classList.toggle('hidden',!session);$('userEmail').textContent=session?.user?.email||'';if(session)await loadOrders();}
 $('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginButton').disabled=true;$('loginMessage').textContent='Signing in…';const {data,error}=await supabase.auth.signInWithPassword({email:$('loginEmail').value.trim(),password:$('loginPassword').value});$('loginButton').disabled=false;if(error){$('loginMessage').textContent=error.message;$('loginMessage').className='message error';return;}$('loginMessage').textContent='';await showApp(data.session);});
 $('signOut').onclick=async()=>{await supabase.auth.signOut();orders=[];await showApp(null);};
-$('newBtn').onclick=openNew;$('close').onclick=$('cancel').onclick=()=>$('editor').close();$('search').oninput=render;$('refreshBtn').onclick=loadOrders;$('exportBtn').onclick=exportCsv;$('addModel').onclick=()=>addModel();$('poForm').addEventListener('submit',saveOrder);['advanceDate','invoice','ddp'].forEach(id=>$(id).addEventListener('input',calc));
+$('newBtn').onclick=openNew;$('close').onclick=$('cancel').onclick=()=>$('editor').close();$('search').oninput=render;$('refreshBtn').onclick=loadOrders;$('exportBtn').onclick=exportCsv;$('addModel').onclick=()=>addModel();$('poForm').addEventListener('submit',saveOrder);$('refreshBtn2')?.addEventListener('click',loadOrders);$('editSelected')?.addEventListener('click',()=>selectedId&&editOrder(selectedId));$('addUpdate')?.addEventListener('click',()=>selectedId&&editOrder(selectedId));['advanceDate','invoice','ddp'].forEach(id=>$(id).addEventListener('input',calc));
 supabase.auth.onAuthStateChange((_event,newSession)=>{session=newSession;showApp(newSession);});
 const {data:{session:initialSession}}=await supabase.auth.getSession();await showApp(initialSession);
